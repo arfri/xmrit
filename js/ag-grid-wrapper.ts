@@ -68,7 +68,8 @@ function showContextMenu<T>(
   rowIndex: number,
   allowInsertRow: boolean,
   dataSchema: T | undefined,
-  ensureSpareRowFn: (() => void) | null
+  ensureSpareRowFn: (() => void) | null,
+  onRowChanged?: () => void
 ) {
   removeContextMenu();
   event.preventDefault();
@@ -89,6 +90,7 @@ function showContextMenu<T>(
           : ({} as any);
         api.applyTransaction({ add: [newRow], addIndex: rowIndex });
         ensureSpareRowFn?.();
+        onRowChanged?.();
       },
     });
     items.push({
@@ -99,6 +101,7 @@ function showContextMenu<T>(
           : ({} as any);
         api.applyTransaction({ add: [newRow], addIndex: rowIndex + 1 });
         ensureSpareRowFn?.();
+        onRowChanged?.();
       },
     });
   }
@@ -110,6 +113,7 @@ function showContextMenu<T>(
       if (rowNode) {
         api.applyTransaction({ remove: [rowNode.data] });
         ensureSpareRowFn?.();
+        onRowChanged?.();
       }
     },
   });
@@ -297,7 +301,8 @@ export function createXmritGrid<T>(config: XmritGridConfig<T>): XmritGrid<T> {
           event.rowIndex!,
           allowInsertRow,
           dataSchema,
-          ensureSpareRowFn
+          ensureSpareRowFn,
+          () => onCellValueChanged?.({} as any)
         );
       }
     },
