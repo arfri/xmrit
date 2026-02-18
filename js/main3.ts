@@ -20,8 +20,10 @@ import {
 
 import lz77 from "./lz77";
 
+// Set to false to disable remote data loading via v1 share links (for air-gapped deployments).
+const ENABLE_REMOTE_FETCH = true;
 
-/** 
+/**
  * Typescript type and interface definitions
  */
 
@@ -3113,6 +3115,10 @@ async function decodeShareLink(
   let labels = [];
   if (version == "1") {
     // version 1. d is a remote url. We fetch labels and data from a remote url.
+    if (!ENABLE_REMOTE_FETCH) {
+      alert("Remote data loading is disabled in this deployment.");
+      throw new Error("Remote data loading is disabled.");
+    }
     let res = await fetch(d);
     let body = await res.json();
     labels = [body.xLabel ?? "Date", body.yLabel ?? "Value"];
