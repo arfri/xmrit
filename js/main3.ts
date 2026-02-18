@@ -2901,7 +2901,10 @@ function initializeModal(dialogId: string, backdropId: string, closeButtonId: st
 
 /* Echarts */
 const ECHARTS_DATE_FORMAT = "{d} {MMM}";
-const defaultValueFormatter = (n: number) => numberStringSpaced(round(n));
+const defaultValueFormatter = (n: number) => {
+  const precision = Math.abs(n) >= 100 ? 1 : Math.abs(n) >= 1 ? 2 : 4;
+  return numberStringSpaced(round(n, precision));
+};
 const backgroundImage = new Image();
 backgroundImage.src = "/images/xmrit-bg.png";
 
@@ -3260,7 +3263,7 @@ function numberStringSpaced(num: number): string {
   let [integerPart, decimalPart] = num.toString().split('.');
 
   // Format the integer part with spaces
-  integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
   // If there is a decimal part, format it similarly with groups of 3 digits
   if (decimalPart) {
