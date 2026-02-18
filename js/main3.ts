@@ -2903,7 +2903,7 @@ function initializeModal(dialogId: string, backdropId: string, closeButtonId: st
 const ECHARTS_DATE_FORMAT = "{d} {MMM}";
 const defaultValueFormatter = (n: number) => numberStringSpaced(round(n));
 const backgroundImage = new Image();
-backgroundImage.src = "../xmrit-bg.png";
+backgroundImage.src = "/images/xmrit-bg.png";
 
 const chartBaseOptions = {
   backgroundColor: "rgba(255, 255, 255, 0.5)",
@@ -3224,7 +3224,7 @@ async function exportCanvasWithBackground(id: string) {
 
   // Load and draw background image
   const bgImage = new Image();
-  bgImage.src = '/xmrit-bg.png';
+  bgImage.src = '/images/xmrit-bg.png';
   
   try {
     await new globalThis.Promise((resolve, reject) => {
