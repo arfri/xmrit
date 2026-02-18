@@ -5,7 +5,7 @@ module.exports = {
     extend: {
       // Add inter var font
       fontFamily: {
-        sans: ["Inter var", "sans-serif"],
+        sans: ["Inter Variable", "sans-serif"],
       },
     },
   },
