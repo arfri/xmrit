@@ -3262,13 +3262,13 @@ function numberStringSpaced(num: number): string {
   // Split the number into integer and decimal parts
   let [integerPart, decimalPart] = num.toString().split('.');
 
-  // Format the integer part with spaces
+  // Format the integer part with comma separators
   integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
   // If there is a decimal part, format it similarly with groups of 3 digits
   if (decimalPart) {
     // Split the decimal part into groups of 3
-    decimalPart = decimalPart.replace(/(\d{3})(?=\d)/g, '$1 '); // Add space after every 3 digits
+    // decimalPart = decimalPart.replace(/(\d{3})(?=\d)/g, '$1 '); // Add space after every 3 digits
     return `${integerPart}.${decimalPart}`;
   }
 
