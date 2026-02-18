@@ -19,6 +19,8 @@ import {
 } from "./ag-grid-wrapper";
 
 import lz77 from "./lz77";
+import Alpine from "alpinejs";
+Alpine.start();
 
 // Set to false to disable remote data loading via v1 share links (for air-gapped deployments).
 const ENABLE_REMOTE_FETCH = true;
