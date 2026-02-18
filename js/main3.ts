@@ -19,6 +19,7 @@ import {
 } from "./ag-grid-wrapper";
 
 import lz77 from "./lz77";
+import "@fontsource-variable/inter";
 import Alpine from "alpinejs";
 Alpine.start();
 
