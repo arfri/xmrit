@@ -2015,6 +2015,20 @@ function initialiseGrids() {
   document.getElementById("extend-dates-locked")?.addEventListener("click", () => {
     handleExtendDates(lockedLimitGrid, "lockedLimitBaseData");
   });
+
+  // ── "Clear table" button handlers ──
+  document.getElementById("clear-table-main")?.addEventListener("click", () => {
+    handleClearTable(grid, "tableData");
+  });
+  document.getElementById("clear-table-trend")?.addEventListener("click", () => {
+    handleClearTable(trendGrid, "trendData");
+  });
+  document.getElementById("clear-table-deseason")?.addEventListener("click", () => {
+    handleClearTable(deseasonaliseGrid, "seasonalFactorData");
+  });
+  document.getElementById("clear-table-locked")?.addEventListener("click", () => {
+    handleClearTable(lockedLimitGrid, "lockedLimitBaseData");
+  });
 }
 
 function handleExtendDates(grid: XmritGrid, stateKey: "tableData" | "trendData" | "seasonalFactorData" | "lockedLimitBaseData") {
@@ -2028,9 +2042,26 @@ function handleExtendDates(grid: XmritGrid, stateKey: "tableData" | "trendData" 
   if (isNaN(count) || count <= 0) return;
   const newDates = extendDateSeries(dates, count);
   const newRows = newDates.map((d) => ({ x: d, value: null }));
-  grid.api.applyTransaction({ add: newRows });
+  const rowCount = grid.api.getDisplayedRowCount();
+  const lastRow = rowCount > 0 ? grid.api.getDisplayedRowAtIndex(rowCount - 1) : null;
+  const isSpareRow = lastRow && !lastRow.data?.x && !lastRow.data?.value;
+  const addIndex = isSpareRow ? rowCount - 1 : rowCount;
+  grid.api.applyTransaction({ add: newRows, addIndex });
   // Sync back to state
   (state as any)[stateKey] = syncGridToState(grid, data);
+}
+
+function handleClearTable(grid: XmritGrid, stateKey: "tableData" | "trendData" | "seasonalFactorData" | "lockedLimitBaseData") {
+  if (!grid) return;
+  if (!confirm("Clear all data from this table?")) return;
+  const emptyData = [{ x: null, value: null }];
+  (state as any)[stateKey] = emptyData;
+  grid.updateData(emptyData);
+  // Checking for duplicates will clear any pre-existing duplicate warnings
+  if (stateKey === "tableData") {
+    checkDuplicatesInTable([]);
+  }
+  redraw("clearTable");
 }
 
 // LOGIC ON PAGE LOAD
