@@ -1553,6 +1553,161 @@ function syncGridToState<T>(grid: XmritGrid, currentState: T[]): T[] {
   return rowData;
 }
 
+type ClipboardParseResult = {
+  type: "single-value" | "date-value" | "values-only" | "dates-only";
+  headers: [string, string] | null;
+  data: DataValue[];
+};
+
+function isDateValue(s: string): boolean {
+  // dayjs parses plain numbers as unix timestamps — reject those
+  if (isNumericValue(s)) return false;
+  return dayjs(s).isValid();
+}
+
+function isNumericValue(s: string): boolean {
+  const trimmed = s.trim();
+  return trimmed !== "" && !isNaN(Number(trimmed));
+}
+
+// Detect column type by checking what fraction of values match
+function detectColumnType(values: string[]): "date" | "numeric" | "text" {
+  if (values.length === 0) return "text";
+  let dates = 0;
+  let nums = 0;
+  for (const v of values) {
+    if (isDateValue(v)) dates++;
+    if (isNumericValue(v)) nums++;
+  }
+  const threshold = values.length * 0.5;
+  // Prefer date if most values are dates (dates can also look numeric in some formats)
+  if (dates >= threshold && dates >= nums) return "date";
+  if (nums >= threshold) return "numeric";
+  return "text";
+}
+
+function parseClipboardData(text: string): ClipboardParseResult | null {
+  const rawRows = text.split(/\r?\n/).filter((r) => r.trim() !== "");
+  if (rawRows.length === 0) return null;
+
+  const delimiter = rawRows[0].includes("\t") ? "\t" : ",";
+  const parsed = rawRows.map((r) => r.split(delimiter).map((c) => c.trim()));
+  const numCols = parsed[0].length;
+
+  // Single value — let AG Grid handle it
+  if (parsed.length === 1 && numCols === 1) {
+    return { type: "single-value", headers: null, data: [] };
+  }
+
+  // Detect header: if the first row contains no dates and no numbers, it's a header.
+  let headers: [string, string] | null = null;
+  let dataRows = parsed;
+  if (parsed.length >= 2) {
+    const firstRow = parsed[0];
+    const firstRowIsData = firstRow.some(
+      (cell) => isDateValue(cell) || isNumericValue(cell)
+    );
+    if (!firstRowIsData) {
+      if (numCols >= 2) headers = [firstRow[0], firstRow[1]];
+      dataRows = parsed.slice(1);
+    }
+  }
+
+  if (numCols === 1) {
+    // Single column — detect type from data rows
+    const values = dataRows.map((r) => r[0]);
+    const colType = detectColumnType(values);
+
+    if (colType === "date") {
+      const data: DataValue[] = [];
+      for (let i = 0; i < values.length; i++) {
+        const d = dayjs(values[i]);
+        if (!d.isValid()) continue;
+        data.push({
+          order: i,
+          x: d.format("YYYY-MM-DD"),
+          value: null as any,
+          status: DataStatus.NORMAL,
+        });
+      }
+      return data.length > 0
+        ? { type: "dates-only", headers: null, data }
+        : null;
+    }
+
+    if (colType === "numeric") {
+      const data: DataValue[] = [];
+      for (let i = 0; i < values.length; i++) {
+        const val = parseFloat(values[i].replace(/[^0-9.\-]/g, ""));
+        if (isNaN(val)) continue;
+        data.push({
+          order: i,
+          x: null as any,
+          value: val,
+          status: DataStatus.NORMAL,
+        });
+      }
+      return data.length > 0
+        ? { type: "values-only", headers: null, data }
+        : null;
+    }
+
+    return null; // all text, nothing useful
+  }
+
+  // Two or more columns — identify which is date and which is numeric
+  const col0Values = dataRows.map((r) => r[0]);
+  const col1Values = dataRows.map((r) => r[1]);
+  const col0Type = detectColumnType(col0Values);
+  const col1Type = detectColumnType(col1Values);
+
+  let dateColIdx: number;
+  let valueColIdx: number;
+  if (col0Type === "date" && col1Type === "numeric") {
+    dateColIdx = 0;
+    valueColIdx = 1;
+  } else if (col1Type === "date" && col0Type === "numeric") {
+    dateColIdx = 1;
+    valueColIdx = 0;
+  } else if (col0Type === "date") {
+    // col1 isn't numeric but col0 is date — try to parse col1 as numbers anyway
+    dateColIdx = 0;
+    valueColIdx = 1;
+  } else if (col1Type === "date") {
+    dateColIdx = 1;
+    valueColIdx = 0;
+  } else {
+    // Neither column is a date — can't make sense of this
+    return null;
+  }
+
+  // Swap headers to match [dateLabel, valueLabel] order if columns were swapped
+  if (headers && dateColIdx === 1) {
+    headers = [headers[1], headers[0]];
+  }
+
+  const data: DataValue[] = [];
+  for (let i = 0; i < dataRows.length; i++) {
+    const row = dataRows[i];
+    const dateStr = row[dateColIdx];
+    const valStr = row[valueColIdx];
+    const d = dayjs(dateStr);
+    if (!d.isValid()) continue;
+    const val = parseFloat(String(valStr).replace(/[^0-9.\-]/g, ""));
+    if (isNaN(val)) continue;
+    data.push({
+      order: i,
+      x: d.format("YYYY-MM-DD"),
+      value: val,
+      status: DataStatus.NORMAL,
+    });
+  }
+
+  return data.length > 0
+    ? { type: "date-value", headers, data }
+    : null;
+}
+
 function initialiseGrids() {
   const seasonalFactorsDataTable = document.querySelector(
     "#seasonal-factors-dataTable"
@@ -1739,6 +1894,112 @@ function initialiseGrids() {
       checkDuplicatesInTable(allData);
       redraw("editTableData");
     },
+  });
+
+  // ── Smart paste handler ──
+  table.addEventListener("paste", (e: ClipboardEvent) => {
+    const text = e.clipboardData?.getData("text/plain");
+    if (!text) return;
+
+    const result = parseClipboardData(text);
+    if (!result) return;
+
+    const { type, headers, data } = result;
+
+    // Single value — let AG Grid handle natively
+    if (type === "single-value") return;
+
+    e.preventDefault();
+
+    if (type === "values-only") {
+      // Overwrite values starting from the focused row, keeping dates intact
+      const startRow = grid.api.getFocusedCell()?.rowIndex ?? 0;
+      const existing = state.tableData;
+
+      // Overwrite existing rows
+      for (let i = 0; i < data.length && startRow + i < existing.length; i++) {
+        if (data[i].value != null) existing[startRow + i].value = data[i].value;
+      }
+
+      // If more values than rows, extend dates and add new rows
+      const overflow = data.length - (existing.length - startRow);
+      if (overflow > 0) {
+        const existingDates = existing.filter((d) => d.x).map((d) => d.x);
+        const newDates = extendDateSeries(existingDates, overflow);
+        const startIdx = data.length - overflow;
+        for (let i = 0; i < newDates.length; i++) {
+          existing.push({
+            order: existing.length,
+            x: newDates[i],
+            value: data[startIdx + i].value,
+            status: DataStatus.NORMAL,
+          });
+        }
+      }
+
+      state.tableData = existing;
+      grid.updateSettings({ data: existing });
+      renderCharts("paste");
+      return;
+    }
+
+    if (type === "dates-only") {
+      // Merge dates into existing data, new dates get null values
+      const existingByDate = new Map<string, DataValue>();
+      for (const dv of state.tableData) {
+        if (dv.x) existingByDate.set(dv.x, dv);
+      }
+      for (const dv of data) {
+        if (!existingByDate.has(dv.x)) {
+          existingByDate.set(dv.x, dv);
+        }
+      }
+      const merged = Array.from(existingByDate.values());
+      sortDataValues(merged);
+      merged.forEach((dv, i) => (dv.order = i));
+      state.tableData = merged;
+      grid.updateSettings({ data: merged });
+      const allDates = merged.map((d) => d.x ?? null);
+      checkDuplicatesInTable(allDates);
+      renderCharts("paste");
+      return;
+    }
+
+    // type === "date-value"
+    // If headers differ from current columns, replace entire dataset
+    if (headers) {
+      const currentXLabel = state.xLabel ?? "Date";
+      const currentYLabel = state.yLabel;
+      if (headers[0] !== currentXLabel || headers[1] !== currentYLabel) {
+        state.xLabel = headers[0];
+        state.yLabel = headers[1];
+        state.tableData = data;
+        state.dividerLines = [];
+        grid.updateSettings({
+          data,
+          colHeaders: [state.xLabel, state.yLabel],
+        });
+        renderCharts("paste");
+        return;
+      }
+    }
+
+    // Merge with existing data (outer join on date)
+    const existingByDate = new Map<string, DataValue>();
+    for (const dv of state.tableData) {
+      if (dv.x) existingByDate.set(dv.x, dv);
+    }
+    for (const dv of data) {
+      existingByDate.set(dv.x, dv);
+    }
+    const merged = Array.from(existingByDate.values());
+    sortDataValues(merged);
+    merged.forEach((dv, i) => (dv.order = i));
+    state.tableData = merged;
+    grid.updateSettings({ data: merged });
+    const allDates = merged.map((d) => d.x ?? null);
+    checkDuplicatesInTable(allDates);
+    renderCharts("paste");
   });
 
   // ── "Extend dates" button handlers ──
